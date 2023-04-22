@@ -1,5 +1,5 @@
 mod harris;
-mod filter;
+pub mod filter;
 fn main() {
     println!("Hello, world!");
 }
