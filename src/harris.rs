@@ -154,7 +154,7 @@ pub struct HarrisCorner {
     pub response: f64,
 }
 
-fn select_output_corners(
+pub fn select_output_corners(
     corner_response: na::DMatrix<f64>,
     // cells: (usize, usize),
     num: usize
@@ -180,7 +180,7 @@ fn select_output_corners(
     corners
 }
 
-fn draw_corners(img: &image::DynamicImage, corners: &Vec<HarrisCorner>) -> image::DynamicImage {
+pub fn draw_corners(img: &image::DynamicImage, corners: &Vec<HarrisCorner>) -> image::DynamicImage {
     let mut img = img.clone();
     let (width, height) = img.dimensions();
     for corner in corners {
@@ -202,15 +202,15 @@ fn draw_corners(img: &image::DynamicImage, corners: &Vec<HarrisCorner>) -> image
 }
 
 #[derive(Debug)]
-struct Brief {
-    descriptor: [u32; 8],
-    harris_corner: HarrisCorner,
+pub struct Brief {
+    pub descriptor: [u32; 8],
+    pub harris_corner: HarrisCorner,
 }
 
-struct HarrisMatch {
-    first: HarrisCorner,
-    second: HarrisCorner,
-    distance: u32,
+pub struct HarrisMatch {
+    pub first: HarrisCorner,
+    pub second: HarrisCorner,
+    pub distance: u32,
 }
 
 impl HarrisMatch {
@@ -223,7 +223,7 @@ impl HarrisMatch {
     }
 }
 
-fn generate_pairs(descriptor_size: usize, patch_size: usize, rng: &mut ThreadRng) -> Vec<((u32, u32), (u32, u32))> {
+pub fn generate_pairs(descriptor_size: usize, patch_size: usize, rng: &mut ThreadRng) -> Vec<((u32, u32), (u32, u32))> {
     (0..descriptor_size)
         .map(|_| {
             (
@@ -234,7 +234,7 @@ fn generate_pairs(descriptor_size: usize, patch_size: usize, rng: &mut ThreadRng
         .collect()
 }
 
-fn brief_descriptor(image: &image::GrayImage, keypoints: &[HarrisCorner], patch_size: usize, pairs: &[((u32, u32), (u32, u32))]) -> Vec<Brief> {
+pub fn brief_descriptor(image: &image::GrayImage, keypoints: &[HarrisCorner], patch_size: usize, pairs: &[((u32, u32), (u32, u32))]) -> Vec<Brief> {
     let mut descriptors = Vec::with_capacity(keypoints.len());
 
     for &HarrisCorner{x, y, response } in keypoints {
@@ -281,7 +281,7 @@ fn hamming_distance(a: &Brief, b: &Brief) -> u32 {
     distance
 }
 
-fn match_descriptors(descriptors1: &[Brief], descriptors2: &[Brief], threshold: f64) -> Vec<HarrisMatch> {
+pub fn match_descriptors(descriptors1: &[Brief], descriptors2: &[Brief], threshold: f64) -> Vec<HarrisMatch> {
     let mut matches = Vec::new();
     let threshold = (threshold * 256.0) as u32;
 
@@ -312,7 +312,7 @@ fn match_descriptors(descriptors1: &[Brief], descriptors2: &[Brief], threshold: 
     matches
 }
 
-fn draw_matches(img1: &image::DynamicImage, img2: &image::DynamicImage, matches: &[HarrisMatch]) -> image::DynamicImage {
+pub fn draw_matches(img1: &image::DynamicImage, img2: &image::DynamicImage, matches: &[HarrisMatch]) -> image::DynamicImage {
     let (width1, height1) = img1.dimensions();
     let (width2, height2) = img2.dimensions();
 
@@ -336,7 +336,7 @@ fn draw_matches(img1: &image::DynamicImage, img2: &image::DynamicImage, matches:
     combined_image
 }
 
-fn detect_harris_corners(
+pub fn detect_harris_corners(
     img: &image::DynamicImage, 
     measure: HarrisCornerDetector,
     k: Option<f64>,
