@@ -122,10 +122,10 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
 
 
     let matches = match_descriptors(&descriptors, &descriptors2, 0.1);
-    let src = matches.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
-    let des = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
+    let des = matches.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
+    let src = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
 
-    let h = compute_h(&des, &src)?;
+    let h = compute_h(&src, &des)?;
     let project = |x: u32, y: u32| -> (u32, u32) {
         let mut p = na::Matrix3x1::<f64>::from_column_slice(&[x as f64, y as f64, 1.0]);
         p = h * p;
@@ -137,10 +137,10 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
         let mut img = image::DynamicImage::new_rgb8(img1.width(), img1.height());
         for x in 0..img1.width() {
             for y in 0..img1.height() {
-                let (x, y) = project(x, y);
-                if x < img1.width() && y < img1.height() {
+                let (projed_x, projed_y) = project(x, y);
+                if projed_x < img1.width() && projed_y < img1.height() {
                     let pixel = img1.get_pixel(x, y);
-                    img.put_pixel(x, y, pixel);
+                    img.put_pixel(projed_x, projed_y, pixel);
                 }
             }
         }
@@ -156,40 +156,72 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
 }
 
 
-// #[test]
-// fn test_opencv_findhomography() -> Result<(), Box<dyn Error>> {
-//     use crate::filter;
-//     use image::io::Reader as ImageReader;
-//     use crate::harris::*;
-//     use opencv::core::*;
-//     use opencv::imgcodecs::*;
-//     use opencv::imgproc::*;
-//     use opencv::features2d::*;
-//     use opencv::calib3d::*;
-//     use opencv::types::*;
+#[test]
+fn test_opencv_findhomography() -> Result<(), Box<dyn Error>> {
+    use crate::filter;
+    use image::io::Reader as ImageReader;
+    use crate::harris::*;
+    use opencv::core::*;
+    use opencv::imgcodecs::*;
+    use opencv::imgproc::*;
+    use opencv::features2d::*;
+    use opencv::calib3d::*;
+    use opencv::types::*;
 
-//     let img1_path = "hw/IMG_0627.JPG";
-//     let img2_path = "hw/IMG_0628.JPG";
-//     let img1 = ImageReader::open(img1_path)?.decode()?;
-//     let img2 = ImageReader::open(img2_path)?.decode()?;
-//     let gray1 = filter::filter(&img1, &filter::kernel::GaussianKernel::new(3, 2.0));
-//     let gray2 = filter::filter(&img2, &filter::kernel::GaussianKernel::new(3, 2.0));
+    let img1_path = "hw/IMG_0627.JPG";
+    let img2_path = "hw/IMG_0628.JPG";
+    let img1 = ImageReader::open(img1_path)?.decode()?;
+    let img2 = ImageReader::open(img2_path)?.decode()?;
+    let gray1 = filter::filter(&img1, &filter::kernel::GaussianKernel::new(3, 2.0));
+    let gray2 = filter::filter(&img2, &filter::kernel::GaussianKernel::new(3, 2.0));
 
-//     let corners1 = detect_harris_corners(&img1, HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
-//     let pairs = generate_pairs(256, 9, &mut rand::thread_rng());
-//     let descriptors = brief_descriptor(&gray1, &corners1, 9, &pairs);
-//     let corners2 = detect_harris_corners(&img2, HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
-//     let descriptors2 = brief_descriptor(&gray2, &corners2, 9, &pairs);
-//     // opencv findhomograpy of two images
-//     let matches = match_descriptors(&descriptors, &descriptors2, 0.1);
-//     let src = matches.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
-//     let des = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
-//     let src_mat = Mat::from_slice_2d(&src).unwrap();
-//     let des_mat = Mat::from_slice_2d(&des).unwrap();
-//     let mut h = Mat::default()?;
-//     let mut mask = Mat::default()?;
-//     find_homography(&src_mat, &des_mat, &mut h, RANSAC, 3.0, &mut mask, 1000, 0.995)?;
-//     println!("{}", h);
-//     assert!(1==2);
-//     Ok(())
-// }
+    let corners1 = detect_harris_corners(&img1, HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
+    let pairs = generate_pairs(256, 9, &mut rand::thread_rng());
+    let descriptors = brief_descriptor(&gray1, &corners1, 9, &pairs);
+    let corners2 = detect_harris_corners(&img2, HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
+    let descriptors2 = brief_descriptor(&gray2, &corners2, 9, &pairs);
+    // opencv findhomograpy of two images
+    let matches = match_descriptors(&descriptors, &descriptors2, 0.1);
+    let src = matches.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
+    let des = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
+    let src = src.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>();
+    let des = des.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>();
+    let src_mat = Mat::from_slice_2d(&src).unwrap();
+    let des_mat = Mat::from_slice_2d(&des).unwrap();
+    let mut h = Mat::default();
+    let homo = find_homography(&src_mat, &des_mat, &mut h, RANSAC, 3.0)?;
+
+    // Mat to na::Matrix3
+    let mut h = na::Matrix3::<f64>::zeros();
+    for i in 0..3i32 {
+        for j in 0..3i32 {
+            h[(i as usize, j as usize)] = *homo.at_2d::<f64>(i, j)?;
+        }
+    }
+    let project = |x: u32, y: u32| -> (u32, u32) {
+        let mut p = na::Matrix3x1::<f64>::from_column_slice(&[x as f64, y as f64, 1.0]);
+        p = h * p;
+        p = p / p[(2, 0)];
+        (p[(0, 0)] as u32, p[(1, 0)] as u32)
+    };
+
+    let project_img = |img1: image::DynamicImage| -> image::DynamicImage {
+        let mut img = image::DynamicImage::new_rgb8(img1.width(), img1.height());
+        for x in 0..img1.width() {
+            for y in 0..img1.height() {
+                let (projed_x, projed_y) = project(x, y);
+                if projed_x < img1.width() && projed_y < img1.height() {
+                    let pixel = img1.get_pixel(x, y);
+                    img.put_pixel(projed_x, projed_y, pixel);
+                }
+            }
+        }
+        img
+    };
+
+    let projected_img = project_img(img1);
+    projected_img.save("projected_img.png")?;
+
+    assert!(1==2);
+    Ok(())
+}

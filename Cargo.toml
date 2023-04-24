@@ -9,4 +9,5 @@ edition = "2021"
 image = "0.24.6"
 imageproc = "0.23.0"
 nalgebra = "0.32.2"
+opencv = "0.80.0"
 rand = { version = "0.8", features = ["std_rng"] }
