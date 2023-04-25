@@ -101,8 +101,9 @@ pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point
     Ok(ret)  
 }
 
+struct HomographyModel;
 
-impl ransac::Model for na::Matrix3<f64> {
+impl ransac::Model for HomographyModel {
     type Point = harris::HarrisMatch;
     type ModelParams = na::Matrix3<f64>;
 
@@ -157,9 +158,9 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
     let des = matches.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
     let src = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
 
-    let h = compute_h(&src, &des)?;
+    // let h = compute_h(&src, &des)?;
 
-    let h = match ransac::ransac::<na::Matrix3<f64>>(&matches, 4, 10000, 3.0, matches.len() / 2) {
+    let h = match ransac::ransac::<HomographyModel>(&matches, 5, 100, 3.0, matches.len() / 2) {
         Some(h) => h,
         None => return Err("no homography found".into()),
     };
