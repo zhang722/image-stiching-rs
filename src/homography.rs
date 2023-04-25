@@ -47,18 +47,12 @@ pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point
 
     // at least 4 point if want to compute H
     assert!(num_points > 3);
-    for p in img_points {
-        println!("img_points: ({}, {})", p.x, p.y);
-    }
 
     type MatrixXx9<T> = na::Matrix<T, na::Dyn, na::U9, na::VecStorage<T, na::Dyn, na::U9>>;
     type RowVector9<T> = na::Matrix<T, na::U1, na::U9, na::ArrayStorage<T, 1, 9>>;
 
     let norm_img = Normalize(img_points)?;
     let norm_world = Normalize(world_points)?;
-    for p in &norm_img.0 {
-        println!("img_points: ({}, {})", p.x, p.y);
-    }
 
     let mut a = MatrixXx9::<f64>::zeros(num_points * 2);
 
@@ -84,7 +78,7 @@ pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point
         Some(v_t) => v_t,
         None => return Err(From::from("compute V failed")),
     };
-    let last_row = v_t.row(8);
+    let last_row = v_t.row(v_t.nrows() - 1);
 
     // construct matrix from vector
     let mut ret = na::Matrix3::<f64>::from_iterator(last_row.into_iter().cloned()).transpose();

@@ -207,6 +207,7 @@ pub struct Brief {
     pub harris_corner: HarrisCorner,
 }
 
+#[derive(Clone)]
 pub struct HarrisMatch {
     pub first: HarrisCorner,
     pub second: HarrisCorner,
