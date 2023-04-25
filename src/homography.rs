@@ -105,7 +105,7 @@ pub fn compute_h(src: &Vec<na::Point2<f64>>, des: &Vec<na::Point2<f64>>) -> Resu
     Ok(ret)  
 }
 
-struct HomographyModel;
+pub struct HomographyModel;
 
 impl ransac::Model for HomographyModel {
     type Point = harris::HarrisMatch;
