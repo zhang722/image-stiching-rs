@@ -41,7 +41,7 @@ pub fn ransac<M: Model>(
     best_fit
 }
 
-#[cfg(test_ransac)]
+#[cfg(test)]
 mod test {
     use super::Model;
     use crate::harris::HarrisMatch;

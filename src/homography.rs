@@ -1,6 +1,10 @@
 use std::error::Error;
 
-use image::{Pixel, GenericImage, GenericImageView};
+use image::{
+    Pixel, 
+    GenericImage, 
+    GenericImageView,
+};
 use nalgebra as na;
 
 use crate::{
@@ -9,10 +13,10 @@ use crate::{
 };
 
 
-fn Normalize(point_vec: &Vec<na::Point2<f64>>) 
+fn normalize(point_vec: &Vec<na::Point2<f64>>) 
 -> Result<(Vec<na::Point2<f64>>, na::Matrix3<f64>), Box<dyn Error>>
 {
-    let mut norm_T = na::Matrix3::<f64>::identity();
+    let mut norm_t = na::Matrix3::<f64>::identity();
     let mut normed_point_vec = Vec::new();
     let mut mean_x = 0.0;
     let mut mean_y = 0.0;
@@ -39,18 +43,18 @@ fn Normalize(point_vec: &Vec<na::Point2<f64>>)
         p_tmp.y = sy * p.y - mean_y * sy;
         normed_point_vec.push(p_tmp);
     }
-    norm_T[(0, 0)] = sx;
-    norm_T[(0, 2)] = -mean_x * sx;
-    norm_T[(1, 1)] = sy;
-    norm_T[(1, 2)] = -mean_y * sy;
+    norm_t[(0, 0)] = sx;
+    norm_t[(0, 2)] = -mean_x * sx;
+    norm_t[(1, 1)] = sy;
+    norm_t[(1, 2)] = -mean_y * sy;
 
-    Ok((normed_point_vec, norm_T))
+    Ok((normed_point_vec, norm_t))
 }
 
 
-pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point2<f64>>) -> Result<na::Matrix3::<f64>, Box<dyn Error>> {
-    let num_points = img_points.len();
-    assert_eq!(num_points, world_points.len());
+pub fn compute_h(src: &Vec<na::Point2<f64>>, des: &Vec<na::Point2<f64>>) -> Result<na::Matrix3::<f64>, Box<dyn Error>> {
+    let num_points = des.len();
+    assert_eq!(num_points, src.len());
 
     // at least 4 point if want to compute H
     assert!(num_points > 3);
@@ -58,17 +62,17 @@ pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point
     type MatrixXx9<T> = na::Matrix<T, na::Dyn, na::U9, na::VecStorage<T, na::Dyn, na::U9>>;
     type RowVector9<T> = na::Matrix<T, na::U1, na::U9, na::ArrayStorage<T, 1, 9>>;
 
-    let norm_img = Normalize(img_points)?;
-    let norm_world = Normalize(world_points)?;
+    let norm_des = normalize(des)?;
+    let norm_src = normalize(src)?;
 
     let mut a = MatrixXx9::<f64>::zeros(num_points * 2);
 
-    let img_world_points_iter = norm_img.0.iter().zip(norm_world.0.iter());
-    for (idx, (img_point, world_point)) in img_world_points_iter.enumerate() {
-        let u = img_point.x;
-        let v = img_point.y;
-        let x_w = world_point.x;
-        let y_w = world_point.y;
+    let des_src_points_iter = norm_des.0.iter().zip(norm_src.0.iter());
+    for (idx, (des, src)) in des_src_points_iter.enumerate() {
+        let u = des.x;
+        let v = des.y;
+        let x_w = src.x;
+        let y_w = src.y;
 
         let ax = RowVector9::<f64>::from_vec(vec![
             x_w, y_w, 1.0, 0.0, 0.0, 0.0, -u*x_w, -u*y_w, -u 
@@ -91,10 +95,10 @@ pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point
     let mut ret = na::Matrix3::<f64>::from_iterator(last_row.into_iter().cloned()).transpose();
 
 
-    ret = match norm_img.1.try_inverse() {
+    ret = match norm_des.1.try_inverse() {
         Some(m) => m,
         None => return Err(From::from("compute inverse norm_img failed")),
-    } * ret * norm_world.1;
+    } * ret * norm_src.1;
 
     ret = ret / ret[(2, 2)];
     
@@ -111,7 +115,7 @@ impl ransac::Model for HomographyModel {
         let src = points.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
         let des = points.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
 
-        match crate::homography::compute_h(&des, &src) {
+        match crate::homography::compute_h(&src, &des) {
             Ok(h) => Some(h),
             Err(e) => {
                 println!("estimate model failed:{}", e);
@@ -122,8 +126,9 @@ impl ransac::Model for HomographyModel {
     }
 
     fn consensus_distance(params: &Self::ModelParams, point: &Self::Point) -> f64 {
-        let des = point.second;
         let src = point.first;
+        let des = point.second;
+
         let src = na::Point3::<f64>::new(src.x as f64, src.y as f64, 1.0);
         let des = na::Point3::<f64>::new(des.x as f64, des.y as f64, 1.0);
         let projected_src = params * src;
@@ -153,17 +158,16 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
     let corners2 = detect_harris_corners(&img2, HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
     let descriptors2 = brief_descriptor(&gray2, &corners2, 9, &pairs);
 
-
     let matches = match_descriptors(&descriptors, &descriptors2, 0.1);
-    let des = matches.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
-    let src = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
 
-    // let h = compute_h(&src, &des)?;
-
-    let h = match ransac::ransac::<HomographyModel>(&matches, 5, 100, 3.0, matches.len() / 2) {
+    // in HarrisMatch, first is src, second is des
+    // that is: second = H * first
+    let h = match ransac::ransac::<HomographyModel>(&matches, 5, 1000, 3.0, matches.len() / 2) {
         Some(h) => h,
         None => return Err("no homography found".into()),
     };
+
+
     let project = |x: u32, y: u32| -> (u32, u32) {
         let mut p = na::Matrix3x1::<f64>::from_column_slice(&[x as f64, y as f64, 1.0]);
         p = h * p;
@@ -186,7 +190,7 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
     };
 
     let projected_img = project_img(img1);
-    projected_img.save("projected_img.png")?;
+    projected_img.save("projected.png")?;
 
     println!("{}", h);
     assert!(1==2);
@@ -227,7 +231,7 @@ fn test_opencv_findhomography() -> Result<(), Box<dyn Error>> {
     let src_mat = Mat::from_slice_2d(&src).unwrap();
     let des_mat = Mat::from_slice_2d(&des).unwrap();
     let mut h = Mat::default();
-    let homo = find_homography(&src_mat, &des_mat, &mut h, RANSAC, 3.0)?;
+    let homo = find_homography(&des_mat, &src_mat, &mut h, RANSAC, 3.0)?;
 
     // Mat to na::Matrix3
     let mut h = na::Matrix3::<f64>::zeros();
@@ -257,7 +261,7 @@ fn test_opencv_findhomography() -> Result<(), Box<dyn Error>> {
         img
     };
 
-    let projected_img = project_img(img1);
+    let projected_img = project_img(img2);
     projected_img.save("projected_img.png")?;
 
     assert!(1==2);
