@@ -1,6 +1,13 @@
 use std::error::Error;
+
 use image::{Pixel, GenericImage, GenericImageView};
 use nalgebra as na;
+
+use crate::{
+    harris,
+    ransac,
+};
+
 
 fn Normalize(point_vec: &Vec<na::Point2<f64>>) 
 -> Result<(Vec<na::Point2<f64>>, na::Matrix3<f64>), Box<dyn Error>>
@@ -95,6 +102,37 @@ pub fn compute_h(img_points: &Vec<na::Point2<f64>>, world_points: &Vec<na::Point
 }
 
 
+impl ransac::Model for na::Matrix3<f64> {
+    type Point = harris::HarrisMatch;
+    type ModelParams = na::Matrix3<f64>;
+
+    fn estimate_model(points: &[Self::Point]) -> Option<Self::ModelParams> {
+        let src = points.iter().map(|p| na::Point2::<f64>::new(p.first.x as f64, p.first.y as f64)).collect::<Vec<_>>();
+        let des = points.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
+
+        match crate::homography::compute_h(&des, &src) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                println!("estimate model failed:{}", e);
+                None
+            },
+        }
+
+    }
+
+    fn consensus_distance(params: &Self::ModelParams, point: &Self::Point) -> f64 {
+        let des = point.second;
+        let src = point.first;
+        let src = na::Point3::<f64>::new(src.x as f64, src.y as f64, 1.0);
+        let des = na::Point3::<f64>::new(des.x as f64, des.y as f64, 1.0);
+        let projected_src = params * src;
+        let projected_src = projected_src / projected_src[2];
+
+        (projected_src - des).norm()
+    }
+}
+
+
 #[test]
 fn test_homography() -> Result<(), Box<dyn Error>> {
     use crate::filter;
@@ -120,6 +158,11 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
     let src = matches.iter().map(|p| na::Point2::<f64>::new(p.second.x as f64, p.second.y as f64)).collect::<Vec<_>>();
 
     let h = compute_h(&src, &des)?;
+
+    let h = match ransac::ransac::<na::Matrix3<f64>>(&matches, 4, 10000, 3.0, matches.len() / 2) {
+        Some(h) => h,
+        None => return Err("no homography found".into()),
+    };
     let project = |x: u32, y: u32| -> (u32, u32) {
         let mut p = na::Matrix3x1::<f64>::from_column_slice(&[x as f64, y as f64, 1.0]);
         p = h * p;
