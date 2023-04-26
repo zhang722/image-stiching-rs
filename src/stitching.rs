@@ -1,6 +1,11 @@
-use std::{error::Error, sync::Arc};
+use std::{
+    error::Error,
+    fs,
+    path::Path,
+};
 
 use image::{GenericImageView, GenericImage};
+use image::io::Reader as ImageReader;
 use nalgebra as na;
 
 use crate::{
@@ -66,11 +71,7 @@ fn is_in_image(x: f64, y: f64, img: &image::DynamicImage) -> bool {
 fn get_mix_weight(x: f64, y: f64, img: &image::DynamicImage) -> f64 {
     let (width, height) = img.dimensions();
     assert!(x >= 0.0 && y >= 0.0 && x + 1.0 < width as f64 && y + 1.0 < height as f64);
-    let min_dis = x
-        // .min(y)
-        .min(width as f64 - x)
-        // .min(height as f64 - y)
-        ;
+    let min_dis = x.min(width as f64 - x);
     if min_dis > 20.0 {
         return 1.0;
     }
@@ -163,6 +164,40 @@ pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::
     Ok(new_img)
 }
 
+pub fn stitching_dir(dir_path: &str) -> Result<(), Box<dyn Error>> {
+    let paths = match fs::read_dir(dir_path) {
+        Err(why) => return Err(format!("read dir {} error: {}", dir_path, why).into()),
+        Ok(paths) => paths,
+    };
+    let mut paths = paths.into_iter()
+        .flat_map(|f| f.ok())
+        .filter_map(|f| f.path().to_str().map(|s| s.to_string()))
+        .filter(|f| !f.contains("output"))
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    let mut paths = paths.into_iter();
+
+    let keeped_img_path = match paths.next() {
+        Some(path) => path,
+        None => return Err("no image found".into()),
+    };
+
+    let mut keeped_img = ImageReader::open(keeped_img_path)?.decode()?;
+
+    for stitched_img_path in paths {
+        let stitched_img = ImageReader::open(stitched_img_path)?.decode()?;
+        let new_img = stitching_two_imgs(keeped_img.clone(), stitched_img)?;
+        keeped_img = new_img;
+    }
+
+    let output_file_name = "output.jpg";
+    let output_path = Path::new(dir_path).join(output_file_name);
+
+    keeped_img.save(output_path)?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod test{
@@ -198,5 +233,39 @@ mod test{
 
         Ok(())
         // Err("end".into())
+    }
+
+    #[test]
+    fn test_path() {
+        use std::fs;
+        use std::path::Path;
+
+        let dir_path = "./hw";
+        let paths = match fs::read_dir(dir_path) {
+            Err(why) => return,
+            Ok(paths) => paths,
+        };
+        let mut paths = paths.into_iter()
+            .flat_map(|f| f.ok())
+            .filter_map(|f| f.path().to_str().map(|s| s.to_string()))
+            .filter(|f| !f.contains("output"))
+            .collect::<Vec<_>>();
+        paths.sort();
+
+        for path in paths.iter().filter(|p| !p.contains("output")) {
+            println!("{:?}", path);
+        }
+
+        let output_file_name = "output.jpg";
+        let output_path = Path::new(dir_path).join(output_file_name);
+        let out_file = fs::File::create(output_path).unwrap();
+
+        assert!(1==2);
+    }
+
+
+    #[test]
+    fn test_stitching_dir() {
+        super::stitching_dir("./hw").unwrap();
     }
 }
