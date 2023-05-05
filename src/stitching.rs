@@ -93,7 +93,7 @@ pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::
 
     // in HarrisMatch, first is src, second is des
     // that is: second = H * first
-    let h = match ransac::ransac::<homography::HomographyModel>(&matches, 5, 1000, 2.0, matches.len() / 2) {
+    let h = match ransac::ransac::<homography::HomographyModel>(&matches, 5, 2000, 3.0, matches.len() / 2) {
         Some(h) => h,
         None => return Err("no homography found".into()),
     };
@@ -164,6 +164,115 @@ pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::
     Ok(new_img)
 }
 
+
+pub fn stitching_multi_imgs(img_paths: &[String]) -> Result<(), Box<dyn Error>> {
+    let mut img_paths = img_paths.to_vec();
+    img_paths.sort();
+
+    let keeped_img = ImageReader::open(&img_paths[0])?.decode()?;
+    let mut stitched_imgs = Vec::new();
+
+    for path in img_paths.windows(2) {
+        let keeped_img = ImageReader::open(&path[0])?.decode()?;
+        let gray1 = filter::filter(&keeped_img, &filter::kernel::GaussianKernel::new(3, 2.0));
+        let corners1 = harris::detect_harris_corners(&keeped_img, harris::HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
+        let pairs = harris::generate_pairs(256, 9, &mut rand::thread_rng());
+        let descriptors = harris::brief_descriptor(&gray1, &corners1, 9, &pairs);
+
+        let stitched_img = ImageReader::open(&path[1])?.decode()?;
+        let gray2 = filter::filter(&stitched_img, &filter::kernel::GaussianKernel::new(3, 2.0));
+        let corners2 = harris::detect_harris_corners(&stitched_img, harris::HarrisCornerDetector::Harris, Some(0.04), 2.0, 2.0, 1.0, 500);
+        let descriptors2 = harris::brief_descriptor(&gray2, &corners2, 9, &pairs);
+        let matches = harris::match_descriptors(&descriptors, &descriptors2, 0.1);
+
+        // in HarrisMatch, first is src, second is des
+        // that is: second = H * first
+        let h = match ransac::ransac::<homography::HomographyModel>(&matches, 5, 2000, 3.0, matches.len() / 2) {
+            Some(h) => h,
+            None => return Err("no homography found".into()),
+        };
+
+        let h = match stitched_imgs.last() {
+            Some((_, _, h_last)) => h * h_last,
+            None => h,
+        };
+
+        let h_inv = match h.try_inverse() {
+            Some(h) => h,
+            None => return Err("no inverse homography found".into()),
+        };
+
+        stitched_imgs.push((stitched_img, h, h_inv));
+    }
+
+    let mut vertexes = get_vertexes(&keeped_img);
+    for (stitched_img, _, h_inv) in stitched_imgs.iter() {
+        let new_vertexes = get_vertexes(stitched_img).iter().map(|v| {
+            let v = h_inv * na::Vector3::<f64>::new(v.x, v.y, 1.0);
+            na::Point2::<f64>::new(v.x / v.z, v.y / v.z)
+        }).collect::<Vec<_>>();
+        vertexes.extend(new_vertexes); 
+    }
+
+    for v in &vertexes {
+        println!("x: {}, y: {}", v.x, v.y);
+    }
+
+    let offset_x = match vertexes.iter().map(|v| v.x).reduce(f64::min) {
+        Some(n) if n < 0.0 => {-n},
+        _ => {0.0},
+    }; 
+
+    let offset_y = match vertexes.iter().map(|v| v.y).reduce(f64::min) {
+        Some(n) if n < 0.0 => {-n},
+        _ => {0.0},
+    };
+    println!("offset_x: {}, offset_y: {}", offset_x, offset_y);
+
+    // get max x of vertexes
+    let max_x = vertexes.iter().map(|v| v.x).reduce(f64::max).unwrap();
+    let max_y = vertexes.iter().map(|v| v.y).reduce(f64::max).unwrap();
+    println!("max_x: {}, max_y: {}", max_x, max_y);
+
+    // new empty image
+    let mut new_img = image::DynamicImage::new_rgb8((max_x + offset_x) as u32, (max_y + offset_y) as u32);
+
+    // copy keeped_img to new_img
+    image::imageops::overlay(&mut new_img, &keeped_img, offset_x as i64, offset_y as i64);
+
+    // find corresponding point in stitching_img
+    for x in 0..new_img.width() {
+        for y in 0..new_img.height() {
+            for (stitched_img, h, _) in stitched_imgs.iter().take(2) {
+                let v = h * na::Vector3::<f64>::new(x as f64 - offset_x, y as f64 - offset_y, 1.0);
+                let projed_x = v.x / v.z;
+                let projed_y = v.y / v.z;
+                if is_in_image(projed_x, projed_y, stitched_img) {
+                    let p = bilinear_interpolation(projed_x, projed_y, stitched_img);
+
+                    // if is_in_image(x as f64 - offset_x, y as f64 - offset_y, &keeped_img) {
+                    //     let keeped_p = keeped_img.get_pixel((x as f64 - offset_x) as u32, (y as f64 - offset_y) as u32);
+                    //     let weight = get_mix_weight(projed_x, projed_y, stitched_img);
+                    //     p[0] = (weight * p[0] as f64 + (1.0 - weight) * keeped_p[0] as f64) as u8;
+                    //     p[1] = (weight * p[1] as f64 + (1.0 - weight) * keeped_p[1] as f64) as u8;
+                    //     p[2] = (weight * p[2] as f64 + (1.0 - weight) * keeped_p[2] as f64) as u8;
+                    // }
+
+                    new_img.put_pixel(x, y, p);
+                    continue;
+                }
+            }
+        }
+    }
+
+
+
+
+    new_img.save("output.jpg")?;
+
+    Ok(())
+}
+
 pub fn stitching_dir(dir_path: &str) -> Result<(), Box<dyn Error>> {
     let paths = match fs::read_dir(dir_path) {
         Err(why) => return Err(format!("read dir {} error: {}", dir_path, why).into()),
@@ -174,27 +283,26 @@ pub fn stitching_dir(dir_path: &str) -> Result<(), Box<dyn Error>> {
         .filter_map(|f| f.path().to_str().map(|s| s.to_string()))
         .filter(|f| !f.contains("output"))
         .collect::<Vec<_>>();
-    paths.sort();
+    paths.sort_by(|a, b| b.cmp(a));
 
-    let mut paths = paths.into_iter();
-
-    let keeped_img_path = match paths.next() {
-        Some(path) => path,
+    let mut img_iter = paths.into_iter();
+    let mut stitched_img = match img_iter.next() {
+        Some(img_path) => {
+            ImageReader::open(img_path)?.decode()?
+        },
         None => return Err("no image found".into()),
     };
-
-    let mut keeped_img = ImageReader::open(keeped_img_path)?.decode()?;
-
-    for stitched_img_path in paths {
-        let stitched_img = ImageReader::open(stitched_img_path)?.decode()?;
-        let new_img = stitching_two_imgs(keeped_img.clone(), stitched_img)?;
-        keeped_img = new_img;
-    }
-
     let output_file_name = "output.jpg";
     let output_path = Path::new(dir_path).join(output_file_name);
 
-    keeped_img.save(output_path)?;
+    for stitched_img_path in img_iter {
+        println!("stitching {}", stitched_img_path); 
+        let keeped_img = ImageReader::open(stitched_img_path)?.decode()?;
+        let new_img = stitching_two_imgs(keeped_img.clone(), stitched_img)?;
+        stitched_img = new_img;
+    }
+    stitched_img.save(output_path)?;
+
 
     Ok(())
 }
@@ -219,20 +327,11 @@ mod test{
     }
     #[test]
     fn test_stitching_multi_imgs() -> Result<(), Box<dyn Error>> {
-        use image::io::Reader as ImageReader;
-        let keeped_img_path = "hw/IMG_0627.JPG";
-        let stitched_img_paths = (28..=32).into_iter().map(|f| format!("hw/IMG_06{:02}.JPG", f)).collect::<Vec<_>>();
-        let mut keeped_img = ImageReader::open(keeped_img_path)?.decode()?;
+        let img_paths = (0..=4).into_iter().map(|f| format!("data/campus/campus_00{}.jpg", f)).collect::<Vec<_>>();
+        super::stitching_multi_imgs(&img_paths)?;
 
-        for stitched_img_path in stitched_img_paths {
-            let stitched_img = ImageReader::open(stitched_img_path)?.decode()?;
-            let new_img = super::stitching_two_imgs(keeped_img.clone(), stitched_img)?;
-            keeped_img = new_img;
-        }
-        keeped_img.save("stitched.jpg")?;
-
-        Ok(())
-        // Err("end".into())
+        // Ok(())
+        Err("end".into())
     }
 
     #[test]
@@ -266,6 +365,7 @@ mod test{
 
     #[test]
     fn test_stitching_dir() {
-        super::stitching_dir("./hw").unwrap();
+        super::stitching_dir("data/yosemite").unwrap();
+        assert!(1==2);
     }
 }

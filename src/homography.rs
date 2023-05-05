@@ -145,8 +145,8 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
     use image::io::Reader as ImageReader;
     use crate::harris::*;
 
-    let img1_path = "hw/IMG_0627.JPG";
-    let img2_path = "hw/IMG_0628.JPG";
+    let img1_path = "data/campus/output.jpg";
+    let img2_path = "data/campus/campus_002.jpg";
     let img1 = ImageReader::open(img1_path)?.decode()?;
     let img2 = ImageReader::open(img2_path)?.decode()?;
     let gray1 = filter::filter(&img1, &filter::kernel::GaussianKernel::new(3, 2.0));
@@ -162,7 +162,7 @@ fn test_homography() -> Result<(), Box<dyn Error>> {
 
     // in HarrisMatch, first is src, second is des
     // that is: second = H * first
-    let h = match ransac::ransac::<HomographyModel>(&matches, 5, 1000, 3.0, matches.len() / 2) {
+    let h = match ransac::ransac::<HomographyModel>(&matches, 5, 5000, 5.0, matches.len() / 2) {
         Some(h) => h,
         None => return Err("no homography found".into()),
     };

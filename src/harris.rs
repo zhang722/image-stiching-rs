@@ -425,8 +425,8 @@ fn show_pair_images() -> Result<(), Box<dyn std::error::Error>> {
 fn test_draw_matches() -> Result<(), Box<dyn std::error::Error>> {
     use crate::filter;
 
-    let img1_path = "hw/IMG_0627.JPG";
-    let img2_path = "hw/IMG_0628.JPG";
+    let img1_path = "data/campus/output.jpg";
+    let img2_path = "data/campus/campus_002.jpg";
     let img1 = ImageReader::open(img1_path)?.decode()?;
     let img2 = ImageReader::open(img2_path)?.decode()?;
     let gray1 = filter::filter(&img1, &filter::kernel::GaussianKernel::new(3, 2.0));
