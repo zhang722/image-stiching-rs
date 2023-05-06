@@ -78,7 +78,7 @@ fn get_mix_weight(x: f64, y: f64, img: &image::DynamicImage) -> f64 {
     min_dis / 20.0
 }
 
-pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::DynamicImage) -> Result<image::DynamicImage, Box<dyn Error>> {
+pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::DynamicImage, k: usize, threshold: f64) -> Result<image::DynamicImage, Box<dyn Error>> {
 
     let gray1 = filter::filter(&keeped_img, &filter::kernel::GaussianKernel::new(3, 2.0));
     let gray2 = filter::filter(&stitched_img, &filter::kernel::GaussianKernel::new(3, 2.0));
@@ -93,7 +93,7 @@ pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::
 
     // in HarrisMatch, first is src, second is des
     // that is: second = H * first
-    let h = match ransac::ransac::<homography::HomographyModel>(&matches, 5, 2000, 3.0, matches.len() / 2) {
+    let h = match ransac::ransac::<homography::HomographyModel>(&matches, 5, k, threshold, matches.len() / 3) {
         Some(h) => h,
         None => return Err("no homography found".into()),
     };
@@ -115,9 +115,6 @@ pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::
     vertexes.push(na::Point2::<f64>::new(width as f64, 0.0));
     vertexes.push(na::Point2::<f64>::new(0.0, height as f64));
     vertexes.push(na::Point2::<f64>::new(width as f64, height as f64));
-    for v in vertexes.iter() {
-        println!("v: ({}, {})", v.x, v.y);
-    }
 
     let offset_x = match vertexes.iter().map(|v| v.x).reduce(f64::min) {
         Some(n) if n < 0.0 => {-n},
@@ -165,9 +162,10 @@ pub fn stitching_two_imgs(keeped_img: image::DynamicImage, stitched_img: image::
 }
 
 
-pub fn stitching_dir(dir_path: &str) -> Result<(), Box<dyn Error>> {
+pub fn stitching_dir<P: AsRef<Path>>(dir_path: P, k: usize, threshold: f64) -> Result<(), Box<dyn Error>> {
+    let dir_path = dir_path.as_ref();
     let paths = match fs::read_dir(dir_path) {
-        Err(why) => return Err(format!("read dir {} error: {}", dir_path, why).into()),
+        Err(why) => return Err(format!("read dir {:?} error: {}", dir_path, why).into()),
         Ok(paths) => paths,
     };
     let mut paths = paths.into_iter()
@@ -190,7 +188,7 @@ pub fn stitching_dir(dir_path: &str) -> Result<(), Box<dyn Error>> {
     for stitched_img_path in img_iter {
         println!("stitching {}", stitched_img_path); 
         let keeped_img = ImageReader::open(stitched_img_path)?.decode()?;
-        let new_img = stitching_two_imgs(keeped_img.clone(), stitched_img)?;
+        let new_img = stitching_two_imgs(keeped_img.clone(), stitched_img, k, threshold)?;
         stitched_img = new_img;
     }
     stitched_img.save(output_path)?;
@@ -212,7 +210,7 @@ mod test{
         let img1 = ImageReader::open(img1_path)?.decode()?;
         let img2 = ImageReader::open(img2_path)?.decode()?;
 
-        let new_img = super::stitching_two_imgs(img1, img2)?;
+        let new_img = super::stitching_two_imgs(img1, img2, 2000, 3.0)?;
         new_img.save("stitched.jpg")?;
 
         Err("end".into())
@@ -250,7 +248,15 @@ mod test{
 
     #[test]
     fn test_stitching_dir() {
-        super::stitching_dir("data/yosemite").unwrap();
+        // super::stitching_dir("data/hw", 2000, 3.0).unwrap();
+        // super::stitching_dir("data/trees", 2000, 3.0).unwrap();
+        // super::stitching_dir("data/yosemite", 2000, 3.0).unwrap();
+        // super::stitching_dir("gaussian/hw", 3000, 5.0).unwrap();
+        // super::stitching_dir("gaussian/trees", 3000, 5.0).unwrap();
+        // super::stitching_dir("gaussian/yosemite", 3000, 5.0).unwrap();
+        super::stitching_dir("salt_and_pepper/hw", 3000, 3.0).unwrap();
+        super::stitching_dir("salt_and_pepper/trees", 3000, 3.0).unwrap();
+        super::stitching_dir("salt_and_pepper/yosemite", 3000, 3.0).unwrap();
         assert!(1==2);
     }
 }

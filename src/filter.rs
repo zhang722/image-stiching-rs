@@ -77,6 +77,94 @@ pub mod kernel {
 
 }
 
+pub mod noise {
+
+    use image::{DynamicImage, GenericImageView, ImageBuffer, Luma, Rgb, GenericImage, Rgba};
+    use rand::distributions::{Distribution, Uniform};
+    use rand::Rng;
+    use rand_distr;
+    use std::path::Path;
+    use std::fs;
+
+    pub enum NoiseType {
+        SaltAndPepper,
+        Gaussian,
+    }
+
+    pub fn add_salt_and_pepper_noise(img: &mut DynamicImage, noise_ratio: f64) {
+        let mut rng = rand::thread_rng();
+        let (width, height) = img.dimensions();
+
+        for y in 0..height {
+            for x in 0..width {
+                if rng.gen::<f64>() < noise_ratio {
+                    let noise_value = if rng.gen::<bool>() { 0 } else { 255 };
+                    let pixel = Rgba([noise_value, noise_value, noise_value, 255]);
+                    img.put_pixel(x, y, pixel);
+                }
+            }
+        }
+    }
+
+    pub fn add_gaussian_noise(img: &mut DynamicImage, mean: f64, stddev: f64) {
+        let mut rng = rand::thread_rng();
+        let normal = rand_distr::Normal::new(mean, stddev).unwrap();
+        let (width, height) = img.dimensions();
+
+        for y in 0..height {
+            for x in 0..width {
+                let pixel: Rgba<u8> = img.get_pixel(x, y);
+                let noise_value = normal.sample(&mut rng) as u8;
+
+                let new_pixel = Rgba([
+                    pixel[0].saturating_add(noise_value),
+                    pixel[1].saturating_add(noise_value),
+                    pixel[2].saturating_add(noise_value),
+                    255,
+                ]);
+
+                img.put_pixel(x, y, new_pixel);
+            }
+        }
+    }
+
+    pub fn process_images(input_dir: &Path, output_base_dir: &Path, noise_type: &NoiseType) -> std::io::Result<()> {
+        for entry in fs::read_dir(input_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                process_images(&path, output_base_dir, noise_type)?;
+            } else if let Some(extension) = path.extension() {
+                if extension == "jpg" || extension == "png" ||
+                    extension == "JPG" || extension == "PNG" {
+                    let img = image::open(&path).expect("Failed to open image");
+
+                    let mut noisy_image = img.clone();
+                    match noise_type {
+                        NoiseType::SaltAndPepper => add_salt_and_pepper_noise(&mut noisy_image, 0.01),
+                        NoiseType::Gaussian => add_gaussian_noise(&mut noisy_image, 0.0, 10.0), 
+                    }
+
+                    let relative_path = path.strip_prefix("data").unwrap();
+                    let output_path = output_base_dir.join(relative_path);
+                    let output_parent = output_path.parent().unwrap();
+
+                    fs::create_dir_all(output_parent)?;
+                    noisy_image
+                        .save(&output_path)
+                        .expect("Failed to save noisy image");
+
+                    println!("Processed and saved noisy image: {:?}", output_path);
+                }
+            }
+        }
+
+        Ok(())
+    }   
+
+}
+
 
 use image::ImageBuffer;
 use image::Luma;
@@ -224,4 +312,16 @@ mod test {
 
         Ok(())
     }
+
+
+
+    #[test]
+    fn test_add_noise() {
+        let input_dir = std::path::Path::new("data");
+        let output_dir = std::path::Path::new("gaussian");
+        super::noise::process_images(input_dir, output_dir, &super::noise::NoiseType::Gaussian).unwrap();
+        let output_dir = std::path::Path::new("salt_and_pepper");
+        super::noise::process_images(input_dir, output_dir, &super::noise::NoiseType::SaltAndPepper).unwrap();
+    }
+
 }
