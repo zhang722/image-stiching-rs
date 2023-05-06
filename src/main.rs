@@ -24,10 +24,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let img_paths = ["data", "gaussian", "salt_and_pepper"];
-    for img_path in img_paths.iter() {
+    for img_path in img_paths.iter().take(1) {
         for subdirectory in subdirectories.iter() {
             let input_dir = std::path::Path::new(img_path).join(subdirectory);
             match stitching::stitching_dir(input_dir, 2000, 3.0) {
+                Ok(_) => {},
+                Err(e) => println!("stitching dir failed:{}", e),  
+            }
+        }
+    }
+
+    for img_path in img_paths.iter().skip(1) {
+        for subdirectory in subdirectories.iter() {
+            let input_dir = std::path::Path::new(img_path).join(subdirectory);
+            match stitching::stitching_dir(input_dir, 3000, 5.0) {
                 Ok(_) => {},
                 Err(e) => println!("stitching dir failed:{}", e),  
             }
